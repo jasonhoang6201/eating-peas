@@ -1,0 +1,16 @@
+{
+  "name": "eating-peas-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db": "node db.test.mjs",
+    "online": "node online.test.mjs",
+    "latency": "node latency.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17",
+    "@supabase/supabase-js": "2.45.4",
+    "puppeteer-core": "^22.15.0",
+    "ws": "^8.22.0"
+  }
+}

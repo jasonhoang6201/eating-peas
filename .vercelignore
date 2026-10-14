@@ -1,0 +1,4 @@
+# Vercel chỉ cần index.html, style.css, js/, asset/
+tests/
+supabase/
+serve.py

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Eating Peas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div id="flash"></div>
+  <div id="hurt"></div>
+  <div class="vignette"></div>
+
+  <section id="lobby" class="panel">
+    <h1>EATING PEAS</h1>
+    <p class="sub">Eat while the boss reads. Freeze when he looks up.</p>
+
+    <div id="join">
+      <label>Name <input id="name" maxlength="12" placeholder="Vinnie"></label>
+      <label>Room code <input id="room" maxlength="8"></label>
+      <button id="btnOnline">Play online</button>
+      <button id="btnOffline" class="ghost">Play vs bots</button>
+      <p id="netNote" class="note"></p>
+    </div>
+
+    <div id="roomView" hidden>
+      <p>Room <b id="roomCode"></b> <button id="btnCopy" class="mini">copy link</button></p>
+      <ol id="plist"></ol>
+      <label id="roundsWrap" class="row">Rounds
+        <select id="rounds"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
+      </label>
+      <label id="fillWrap" class="check"><input type="checkbox" id="fillBots" checked> Fill empty seats with bots</label>
+      <button id="btnStart">Start</button>
+      <p id="roomNote" class="note"></p>
+      <p id="waitNote" class="note">Waiting for host…</p>
+    </div>
+
+    <ul class="rules">
+      <li>Hold <b>POKE</b> <kbd>F</kbd>: grab 1–2 peas. Fork holds 15.</li>
+      <li><b>EAT</b> <kbd>E</kbd>: eat everything on the fork.</li>
+      <li>A move can't be stopped once started.</li>
+      <li>Boss looks up while you move: you get shot.</li>
+      <li>Round ends at 100 peas or 1 player left.</li>
+      <li>Score = peas eaten. Alive at the end: +half, max +20.</li>
+    </ul>
+  </section>
+
+  <section id="hud" hidden>
+    <div id="roundTag"></div>
+    <ol id="score"></ol>
+    <div id="spectate" hidden></div>
+    <div id="controls">
+      <div id="forkBox"><b id="forkLabel">FORK</b><div class="fbar"><div id="forkFill"></div></div></div>
+      <div class="btns">
+        <button id="btnPoke">POKE <kbd>F</kbd></button>
+        <button id="btnEat">EAT <kbd>E</kbd></button>
+      </div>
+      <div class="bar"><div id="prog"></div></div>
+    </div>
+  </section>
+
+  <div id="count" hidden></div>
+  <div id="dead" hidden>DEAD</div>
+
+  <section id="overlay" class="panel" hidden>
+    <h1 id="overTitle"></h1>
+    <p id="overSub" class="sub"></p>
+    <table id="boardTbl">
+      <thead><tr><th>#</th><th>Name</th><th>Peas</th><th>Bonus</th><th>Total</th></tr></thead>
+      <tbody id="board"></tbody>
+    </table>
+    <div id="boardTimer"><span>Next round</span><div class="bar"><div id="boardFill"></div></div></div>
+    <button id="btnAgain">Back to lobby</button>
+    <p id="waitAgain" class="note">Waiting for host…</p>
+  </section>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+:root {
+  --ink: #e8e2d0;
+  --dim: #9a937f;
+  --paper: rgba(18, 16, 13, 0.88);
+  --red: #c4231c;
+  --green: #6fbf3f;
+  --yellow: #ffd54a;
+}
+
+* { box-sizing: border-box; }
+/* các class đặt display (flex…) ghi đè thuộc tính hidden nếu không có rule này */
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #0c0b0a; color: var(--ink); }
+body { font-family: 'Rubik', Arial, sans-serif; touch-action: none; user-select: none; }
+
+#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+/* mọi người khi có tiếng súng: nhòe và tối nặng nhất lúc trúng, nhòe lại ở mỗi điểm lắc xa nhất
+   (0.3s, 0.65s, 0.95s, 1.25s, khớp với stunKeys trong js/scene.js), rõ hẳn ở 1.6s */
+#view.stun { animation: stun 1.6s linear; }
+@keyframes stun {
+  0% { filter: blur(7px) brightness(0.35) saturate(1.6); }
+  19% { filter: blur(5px) brightness(0.6); }
+  30% { filter: blur(3px) brightness(0.7); }
+  41% { filter: blur(4px) brightness(0.75); }
+  50% { filter: blur(2px) brightness(0.85); }
+  59% { filter: blur(3px) brightness(0.9); }
+  68% { filter: blur(1px); }
+  78% { filter: blur(1.5px); }
+  100% { filter: none; }
+}
+
+
+.vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.35) 100%); }
+/* người bị bắn: viền đỏ đậm rồi mờ dần, giữ lại một lớp đỏ nhạt */
+#hurt { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(120,0,0,0.25) 30%, rgba(90,0,0,0.9) 100%); }
+#hurt.on { animation: hurt 2.5s ease-out forwards; }
+@keyframes hurt { 0% { opacity: 1; } 100% { opacity: 0.45; } }
+#flash { position: fixed; inset: 0; pointer-events: none; background: #fff3d0; opacity: 0; }
+#flash.on { animation: flash 0.25s ease-out; }
+@keyframes flash { from { opacity: 0.7; } to { opacity: 0; } }
+
+.panel {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
+  background: var(--paper); border: 1px solid #3a352c; padding: 22px; box-shadow: 0 10px 40px #000;
+}
+h1 { font-family: 'Bungee', Impact, sans-serif; font-weight: 400; letter-spacing: 1px; margin: 0 0 4px; font-size: 38px; color: var(--green); text-shadow: 3px 3px 0 #000; }
+.sub { margin: 0 0 16px; color: var(--dim); }
+label { display: block; margin-bottom: 10px; font-size: 14px; color: var(--dim); }
+input:not([type]), input[type=text] { display: block; width: 100%; margin-top: 4px; padding: 9px 10px; background: #1c1a16; border: 1px solid #4a4538; color: var(--ink); font: inherit; font-size: 16px; text-transform: none; }
+#room { text-transform: uppercase; }
+.row { display: flex; align-items: center; justify-content: space-between; color: var(--ink); }
+select { padding: 6px 10px; background: #1c1a16; border: 1px solid #4a4538; color: var(--ink); font: inherit; font-size: 16px; }
+.check { display: flex; gap: 8px; align-items: center; color: var(--ink); }
+button { display: block; width: 100%; margin-top: 8px; padding: 11px; font-family: 'Bungee', sans-serif; font-size: 17px; letter-spacing: 0; border: 0; background: var(--red); color: #fff; cursor: pointer; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.ghost { background: transparent; border: 1px solid #5a5446; color: var(--ink); }
+button.mini { display: inline; width: auto; padding: 2px 8px; margin: 0 0 0 6px; font-size: 12px; background: #3a352c; }
+.note { color: var(--dim); font-size: 13px; min-height: 1em; }
+#plist { padding-left: 22px; }
+#plist i, #score i { color: var(--dim); font-size: 12px; }
+.rules { margin: 16px 0 0; padding-left: 18px; font-size: 13px; color: var(--dim); line-height: 1.5; }
+kbd { border: 1px solid #5a5446; padding: 0 4px; }
+
+#hud { position: fixed; inset: 0; pointer-events: none; }
+#score { position: absolute; top: 14px; left: 14px; margin: 0; padding: 8px 12px; list-style: none; background: rgba(0,0,0,0.55); font-size: 14px; min-width: 170px; }
+#score li { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+/* thanh số pea đã ăn / WIN */
+#score s { display: block; width: 80px; height: 8px; background: rgba(255,255,255,0.12); border: 1px solid #5a5446; text-decoration: none; }
+#score u { display: block; height: 100%; background: var(--green); }
+#score li.self u { background: var(--yellow); }
+#score li.self { color: var(--yellow); }
+#score li.out { color: #6b6455; text-decoration: line-through; }
+#spectate { position: absolute; bottom: 30px; left: 0; right: 0; text-align: center; font-size: 17px; text-shadow: 2px 2px 0 #000; }
+#controls { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); width: min(420px, calc(100vw - 32px)); }
+#controls[hidden] { display: none; }
+/* nĩa trên HUD: thanh tiến độ số pea trên nĩa / FORK_MAX, viền vàng khi đầy */
+#forkBox { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+#forkLabel { font-family: 'Bungee', sans-serif; font-size: 20px; min-width: 44px; text-shadow: 2px 2px 0 #000; }
+.fbar { flex: 1; height: 18px; background: rgba(0,0,0,0.6); border: 2px solid #8a8d91; }
+#forkFill { height: 100%; background: var(--green); transform-origin: left; transform: scaleX(0); transition: transform 0.08s; }
+#forkBox.full .fbar { border-color: var(--yellow); }
+#forkBox.full #forkLabel { color: var(--yellow); }
+.btns { display: flex; gap: 10px; }
+.btns button { pointer-events: auto; margin: 0; padding: 14px 0; font-size: 22px; touch-action: none; }
+.btns kbd { font-size: 12px; vertical-align: middle; border-color: rgba(255,255,255,0.5); }
+#btnPoke { background: #3f6e25; }
+#btnEat { background: #8a5a1c; }
+.btns button.busy { filter: brightness(1.35); }
+.btns button:disabled:not(.busy) { opacity: 0.35; }
+.bar { height: 8px; margin-top: 8px; background: rgba(0,0,0,0.6); border: 1px solid #4a4538; }
+#prog { height: 100%; background: var(--green); transform-origin: left; transform: scaleX(0); }
+
+/* đếm ngược đầu ván: mỗi số phóng to rồi thu về trong 0.35s */
+#count {
+  position: fixed; top: 34%; left: 0; right: 0; text-align: center; pointer-events: none;
+  font-family: 'Bungee', Impact, sans-serif; font-size: clamp(72px, 16vw, 160px); color: var(--ink);
+  text-shadow: 5px 5px 0 #000; letter-spacing: 4px;
+}
+#count.pop { animation: slam 0.35s ease-out; }
+
+#dead {
+  position: fixed; top: 38%; left: 0; right: 0; text-align: center; pointer-events: none;
+  font-family: 'Bungee', Impact, sans-serif; font-size: clamp(48px, 12vw, 120px); color: var(--red);
+  text-shadow: 4px 4px 0 #000; letter-spacing: 6px; animation: slam 0.3s ease-out, fade 0.6s 2s forwards;
+}
+@keyframes fade { to { opacity: 0; } }
+@keyframes slam { from { transform: scale(2.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+#roundTag { position: absolute; top: 14px; right: 14px; padding: 6px 12px; background: rgba(0,0,0,0.55); font-family: 'Bungee', sans-serif; font-size: 18px; letter-spacing: 1px; }
+
+/* bảng điểm sau mỗi trận */
+#boardTbl { width: 100%; border-collapse: collapse; font-size: 15px; }
+#boardTbl th { font-weight: normal; color: var(--dim); font-size: 12px; text-align: right; padding: 0 6px 4px; border-bottom: 1px solid #3a352c; }
+#boardTbl td { text-align: right; padding: 5px 6px; border-bottom: 1px solid #2a2620; }
+#boardTbl th:nth-child(2), #boardTbl td:nth-child(2) { text-align: left; width: 100%; }
+#boardTbl td:first-child { color: var(--dim); }
+#boardTbl tr.self { color: var(--yellow); }
+#boardTbl tr.out td:nth-child(4) { color: var(--red); }
+#boardTbl b { font-family: 'Bungee', sans-serif; font-size: 17px; }
+#boardTimer { margin-top: 14px; font-size: 13px; color: var(--dim); }
+#boardTimer .bar { height: 10px; margin-top: 4px; }
+/* thanh đếm ngược tới trận tiếp theo: từ đầy về rỗng trong RULES.BOARD giây (thời lượng đặt trong main.js) */
+#boardFill { height: 100%; background: var(--yellow); transform-origin: left; }
+@keyframes drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+@media (max-width: 600px) {
+  #score { font-size: 12px; min-width: 140px; top: 60px; }
+}
