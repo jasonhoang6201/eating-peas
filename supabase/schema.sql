@@ -30,14 +30,15 @@ revoke all on schema peas from public;
 create table peas.cfg (
   id int primary key default 1 check (id = 1),
   seats int not null default 6,
-  plate int not null default 120,       -- số pea trên mỗi đĩa
-  win int not null default 100,         -- ăn đủ số này thì thắng trận
+  plate int not null default 84,        -- số pea trên mỗi đĩa
+  win int not null default 70,          -- ăn đủ số này thì thắng trận
   fork_max int not null default 15,
   poke float8 not null default 0.4,     -- giây cho một lần xiên
   eat float8 not null default 0.6,      -- giây cho một lần ăn
   countdown float8 not null default 3,
-  warn float8 not null default 0.6,     -- giây mafia hạ báo trước khi nhìn
-  fake float8 not null default 0.25,    -- xác suất hạ báo rồi đọc tiếp
+  instant float8 not null default 0.3,  -- xác suất hết reading thì nhìn lên luôn, không rung báo trước
+  warn float8 not null default 0.6,     -- giây mafia rung báo trước khi nhìn
+  fake float8 not null default 0.25,    -- xác suất rung báo rồi đọc tiếp
   after_shot float8 not null default 3.9,
   look_down float8 not null default 0.4,-- giây từ lúc thôi nhìn tới lúc đọc báo lại (không bắn ai)
   read_min float8 not null default 2.5, read_max float8 not null default 7,
@@ -183,7 +184,7 @@ end $$;
 -- ---------- vòng đời trận ----------
 
 -- dur chỉ gửi cho countdown và warning. Thời lượng reading, watching, raising không gửi,
--- nên client không biết trước khi nào mafia hạ báo.
+-- nên client không biết trước khi nào mafia rung báo hay nhìn lên.
 create function peas.set_phase(p_code text, p_phase text, p_at timestamptz, p_dur float8, p_now timestamptz)
 returns void language plpgsql set search_path = '' as $$
 begin
@@ -259,8 +260,14 @@ begin
   sp := greatest(0.5, 1 - peas.el(et, r.started_at) / c.speed_span);
   case r.phase
     when 'reading' then
-      -- bắt đầu cảnh báo lúc xử lý (p_now), không phải lúc reading hết hạn
-      perform peas.set_phase(p_code, 'warning', p_now, c.warn, p_now);
+      if random() < c.instant then
+        -- nhìn lên luôn tại lúc reading hết hạn, không cảnh báo
+        perform peas.set_phase(p_code, 'watching', et, peas.rnd(c.watch_min, c.watch_max), p_now);
+        perform peas.judge(p_code, et, p_now);
+      else
+        -- bắt đầu cảnh báo lúc xử lý (p_now), không phải lúc reading hết hạn
+        perform peas.set_phase(p_code, 'warning', p_now, c.warn, p_now);
+      end if;
     when 'warning' then
       if random() < c.fake then
         perform peas.set_phase(p_code, 'reading', et, peas.rnd(c.fake_min, c.fake_max) * sp, p_now);

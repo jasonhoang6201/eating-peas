@@ -25,8 +25,8 @@ async function fresh(cfg = {}) {
   await db.exec(schema);
   T0 = Date.parse('2026-01-01T00:00:00Z');
   await setClock(0);
-  // mặc định cho test: thời lượng cố định, không hạ báo giả
-  await setCfg({ fake: 0, read_min: 5, read_max: 5, watch_min: 2, watch_max: 2, ...cfg });
+  // mặc định cho test: thời lượng cố định, không rung báo giả, không nhìn luôn
+  await setCfg({ instant: 0, fake: 0, read_min: 5, read_max: 5, watch_min: 2, watch_max: 2, ...cfg });
 }
 async function setClock(s) { clock = Math.round(s * 1000) / 1000; await db.query(`select set_config('peas.now', $1, false)`, [sec(s)]); }
 // Mặc định mọi người chơi đều còn kết nối: mỗi lần tua đồng hồ, seen_at của mọi người được cập nhật
@@ -296,7 +296,7 @@ await test('nĩa đầy fork_max: poke bị từ chối full, gain không vượ
 await test('đĩa hết pea: poke bị từ chối empty, gain không vượt số pea còn trên đĩa', async () => {
   const [a] = await setup(2, 1, { win: 999 });
   const id = await a.id();
-  await db.query(`update peas.members set peas = 119, fork = 0 where id = $1`, [id]);
+  await db.query(`update peas.members set peas = 83, fork = 0 where id = $1`, [id]);
   eq((await a.act('poke')).gain, 1);
   await wait(0.4);
   eq((await a.act('poke')).reason, 'empty');
@@ -435,13 +435,25 @@ await test('không ai dính: watching -> raising (look_down) -> reading', async 
   eq((await room()).phase, 'reading');
 });
 
-await test('hạ báo giả (fake = 1): warning -> reading, không bắn ai dù đang xiên', async () => {
+await test('rung báo giả (fake = 1): warning -> reading, không bắn ai dù đang xiên', async () => {
   const [a] = await setup(2, 1, { fake: 1 });
   await wait(5); await a.tick();
   await wait(0.5); await a.act('poke');
   await wait(0.2); await a.tick();
   eq((await room()).phase, 'reading');
   eq((await mem(await a.id())).alive, true);
+});
+
+await test('nhìn luôn (instant = 1): reading -> watching tại lúc reading hết hạn, không warning, bắn người đang xiên', async () => {
+  const [a, b] = await setup(2, 1, { instant: 1 });
+  const read = await room();
+  await wait(4.8); await a.act('poke');        // reading hết hạn ở giây 5, lần xiên còn chạy tới 5.2
+  await wait(0.3); await b.tick();
+  const r = await room();
+  eq(r.phase, 'raising');
+  eq(+new Date(r.phase_at), +new Date(read.phase_end), 'bắn tại lúc reading hết hạn');
+  ok(!(await events()).some((e) => e.type === 'mafia' && e.data.phase === 'warning'));
+  eq([(await mem(await a.id())).alive, (await mem(await b.id())).alive], [false, true]);
 });
 
 await test('mafia đọc báo nhanh dần: sau speed_span giây, thời lượng reading còn một nửa', async () => {
@@ -461,10 +473,10 @@ await test('mafia đọc báo nhanh dần: sau speed_span giây, thời lượng
 
 async function feed(id, peas) { await db.query(`update peas.members set peas = $2 where id = $1`, [id, peas]); }
 
-await test('ăn đủ 100 pea: ending, chặn hành động, end_peas giây sau gửi end với điểm đúng', async () => {
+await test('ăn đủ 70 pea: ending, chặn hành động, end_peas giây sau gửi end với điểm đúng', async () => {
   const [a, b, c] = await setup(3);
   const [ia, ib, ic] = [await a.id(), await b.id(), await c.id()];
-  await feed(ia, 95); await feed(ib, 30);
+  await feed(ia, 65); await feed(ib, 30);
   await db.query(`update peas.members set fork = 6 where id = $1`, [ia]);
   await a.act('eat');
   await wait(0.6); await b.tick();
@@ -475,7 +487,7 @@ await test('ăn đủ 100 pea: ending, chặn hành động, end_peas giây sau 
   await wait(1.2); await b.tick();
   const end = (await events()).find((e) => e.type === 'end').data;
   eq([end.winner, end.reason], [ia, 'peas']);
-  eq(end.scores[ia], { peas: 101, bonus: 20, total: 121 });
+  eq(end.scores[ia], { peas: 71, bonus: 20, total: 91 });
   eq(end.scores[ib], { peas: 30, bonus: 15, total: 45 });
   eq(end.scores[ic], { peas: 0, bonus: 0, total: 0 });
   eq((await room()).status, 'over');
@@ -497,7 +509,7 @@ await test('còn 1 người sống: reason last, người chết không có thư
 await test('nhiều trận: bảng điểm board giây rồi tự sang trận sau, điểm cộng dồn, trận cuối không có next', async () => {
   const [a, b] = await setup(2, 2);
   const ia = await a.id();
-  await feed(ia, 100); await db.query(`update peas.members set fork = 1 where id = $1`, [ia]);
+  await feed(ia, 70); await db.query(`update peas.members set fork = 1 where id = $1`, [ia]);
   await a.act('eat'); await wait(0.6); await a.tick(); await wait(1.2); await a.tick();
   const r1 = await room();
   eq(r1.status, 'over'); ok(r1.next_at);
@@ -506,16 +518,16 @@ await test('nhiều trận: bảng điểm board giây rồi tự sang trận sa
   const r2 = await room();
   eq([r2.status, r2.round, r2.phase], ['play', 2, 'countdown']);
   const st = (await events()).filter((e) => e.type === 'start').at(-1).data;
-  eq(st.round, 2); eq(st.total[ia], 121);
+  eq(st.round, 2); eq(st.total[ia], 91);
   const m = await mem(ia);
   eq([m.peas, m.fork, m.alive, m.st], [0, 0, true, 'idle']);
   // trận 2 (cuối)
   await wait(3); await a.tick();
-  await feed(ia, 100); await db.query(`update peas.members set fork = 2 where id = $1`, [ia]);
+  await feed(ia, 70); await db.query(`update peas.members set fork = 2 where id = $1`, [ia]);
   await a.act('eat'); await wait(0.6); await a.tick(); await wait(1.2); await a.tick();
   const r3 = await room();
   eq([r3.status, r3.next_at], ['over', null]);
-  eq((await events()).filter((e) => e.type === 'end').at(-1).data.scores[ia].total, 121 + 122);
+  eq((await events()).filter((e) => e.type === 'end').at(-1).data.scores[ia].total, 91 + 92);
   await wait(60); await a.tick(); await b.tick();
   eq((await room()).status, 'over', 'trận cuối giữ bảng điểm');
 });
@@ -523,7 +535,7 @@ await test('nhiều trận: bảng điểm board giây rồi tự sang trận sa
 await test('peas_lobby: chỉ host, chỉ sau trận cuối; về phòng chờ xóa ghế và trạng thái trận', async () => {
   const [a, b] = await setup(2, 1);
   ok((await rpcErr('peas_lobby', 'R1', SECRETS[0]))?.includes('not finished'));
-  await feed(await a.id(), 100); await db.query(`update peas.members set fork = 1`);
+  await feed(await a.id(), 70); await db.query(`update peas.members set fork = 1`);
   await a.act('eat'); await wait(0.6); await a.tick(); await wait(1.2); await a.tick();
   ok((await rpcErr('peas_lobby', 'R1', SECRETS[1]))?.includes('Only the host'));
   eq(await a.lobby(), { ok: true });
@@ -557,7 +569,7 @@ await test('người rời trận được vào lại: tick lại trả state, t
   eq(s.status, 'play');
   eq(s.players.find((p) => p.id === ib).st, 'dead');
   // a ăn đủ -> trận 2: b còn kết nối nên có ghế
-  await feed(await a.id(), 100); await db.query(`update peas.members set fork = 1 where id = $1`, [await a.id()]);
+  await feed(await a.id(), 70); await db.query(`update peas.members set fork = 1 where id = $1`, [await a.id()]);
   await a.act('eat');
   for (let i = 0; i < 12; i++) { await wait(1); await a.tick(); await b.tick(); await c.tick(); }
   const st = (await events()).filter((e) => e.type === 'start').at(-1).data;
@@ -591,7 +603,7 @@ await test('refresh trang (join lại cùng secret) giữa trận: vẫn là ng�
 
 await test('2 người chơi, 1 người rời giữa bảng điểm: trận sau còn < 2 người thì về phòng chờ', async () => {
   const [a, b] = await setup(2, 3);
-  await feed(await a.id(), 100); await db.query(`update peas.members set fork = 1 where id = $1`, [await a.id()]);
+  await feed(await a.id(), 70); await db.query(`update peas.members set fork = 1 where id = $1`, [await a.id()]);
   await a.act('eat'); await wait(0.6); await a.tick(); await wait(1.2); await a.tick();
   eq((await room()).status, 'over');
   offline.add(await b.id());
@@ -660,7 +672,7 @@ await test('chạy lại schema.sql trên database đã có dữ liệu không l
 await test('mô phỏng 30 trận ngẫu nhiên: các bất biến luôn đúng', async () => {
   for (let g = 0; g < 30; g++) {
     const n = 2 + (g % 5);
-    const ps = await setup(n, 1, { fake: 0.25, read_min: 1, read_max: 4 });
+    const ps = await setup(n, 1, { instant: 0.3, fake: 0.25, read_min: 1, read_max: 4 });
     const ids = await Promise.all(ps.map((p) => p.id()));
     let steps = 0;
     while ((await room()).status === 'play' && steps < 4000) {
@@ -674,7 +686,7 @@ await test('mô phỏng 30 trận ngẫu nhiên: các bất biến luôn đúng'
       const ms = await all(`select * from peas.members where seat is not null`);
       for (const m of ms) {
         ok(m.fork >= 0 && m.fork <= 15, `fork ${m.fork}`);
-        ok(m.peas + m.fork + m.gain + m.q_gain <= 120, 'không vượt số pea trên đĩa');
+        ok(m.peas + m.fork + m.gain + m.q_gain <= 84, 'không vượt số pea trên đĩa');
         ok(!(m.q_kind && !['poking', 'eating'].includes(m.st)), 'hàng đợi chỉ tồn tại khi đang bận');
         if (!m.alive) ok(['dead', 'left'].includes(m.st), `chết mà st ${m.st}`);
       }

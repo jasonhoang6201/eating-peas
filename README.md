@@ -1,10 +1,10 @@
 # Eating Peas
 
-Game web nhiều người chơi: 6 người ngồi quanh bàn, xiên và ăn pea khi mafia đọc báo. Mafia hạ báo nhìn lên thì lên đạn, chĩa súng rồi bắn 1 người đang xiên hoặc đang ăn (nhiều người thì chọn ngẫu nhiên), rồi đọc báo tiếp.
+Game web nhiều người chơi: 6 người ngồi quanh bàn, xiên và ăn pea khi mafia đọc báo. Hết lúc đọc báo, mafia rung báo 0.4s để cảnh báo rồi nhìn lên (25% số lần rung báo là giả, mafia đọc tiếp), hoặc 30% số lần nhìn lên luôn không cảnh báo. Nhìn lên thấy người đang hành động thì lên đạn, chĩa súng rồi bắn 1 người đang xiên hoặc đang ăn (nhiều người thì chọn ngẫu nhiên), rồi đọc báo tiếp.
 
-Điều khiển: nút POKE (giữ `F`) xiên liên tục, mỗi lần 0.4s (hạ tay, đâm, đưa tay về), dính 1–2 pea, nĩa giữ tối đa 15 pea. Ăn đủ 100 pea (mỗi đĩa có 120) thì thắng. Nút EAT (`E`) ăn hết pea trên nĩa trong 0.6s. Hành động đã bắt đầu thì chạy hết. Đầu ván đếm ngược 3 giây; trong pha `countdown` và `raising` (mafia chưa đọc báo lại) nút bị khóa.
+Điều khiển: nút POKE (giữ `F`) xiên liên tục, mỗi lần 0.4s (hạ tay, đâm, đưa tay về), dính 1–2 pea, nĩa giữ tối đa 15 pea. Ăn đủ 70 pea (mỗi đĩa có 84) thì thắng. Nút EAT (`E`) ăn hết pea trên nĩa trong 0.6s. Hành động đã bắt đầu thì chạy hết. Đầu ván đếm ngược 3 giây; trong pha `countdown` và `raising` (mafia chưa đọc báo lại) nút bị khóa.
 
-Trận đấu: chủ phòng chọn 1–5 trận trong phòng chờ. Một trận kết thúc khi có người ăn đủ 100 pea hoặc chỉ còn 1 người sống. Điểm trận = số pea đã ăn; người còn sống lúc hết trận được thưởng `min(20, floor(pea / 2))` (`survivorBonus` trong `js/rules.js`). Người không ăn pea nào thì thưởng bằng 0, nên ngồi im chờ người khác bị bắn không có điểm. Điểm một trận tối đa khoảng 120 (100 pea + 20). Hết mỗi trận hiện bảng điểm 7 giây kèm thanh đếm ngược rồi tự sang trận tiếp; hết trận cuối thì giữ bảng chung cuộc tới khi chủ phòng bấm về phòng chờ.
+Trận đấu: chủ phòng chọn 1–5 trận trong phòng chờ. Một trận kết thúc khi có người ăn đủ 70 pea hoặc chỉ còn 1 người sống. Điểm trận = số pea đã ăn; người còn sống lúc hết trận được thưởng `min(20, floor(pea / 2))` (`survivorBonus` trong `js/rules.js`). Người không ăn pea nào thì thưởng bằng 0, nên ngồi im chờ người khác bị bắn không có điểm. Điểm một trận tối đa khoảng 90 (70 pea + 20). Hết mỗi trận hiện bảng điểm 7 giây kèm thanh đếm ngược rồi tự sang trận tiếp; hết trận cuối thì giữ bảng chung cuộc tới khi chủ phòng bấm về phòng chờ.
 
 ## Chạy
 
@@ -34,7 +34,7 @@ Server là Postgres của Supabase (`supabase/schema.sql`). Client không quyế
 - Danh tính: mỗi tab sinh một secret ngẫu nhiên; server dùng `md5(secret)` làm id công khai. Client khác chỉ thấy id, nên không gửi lệnh thay người khác được.
 - `peas_act('poke' | 'eat')`: server lấy giờ của chính nó làm lúc bắt đầu, kiểm tra luật (còn sống, không bị khóa, nĩa chưa đầy, hành động trước đã xong), tự tung số pea dính lên nĩa (1–2) và cộng điểm khi hành động xong. Lệnh tới sớm hơn lúc hành động trước xong ≤ 0.25s được xếp hàng (1 lệnh), để độ trễ mạng không làm hỏng việc giữ F liên tục.
 - Không có process chạy liên tục. Mỗi client gọi `peas_tick` mỗi 250ms; `peas.advance` xử lý các mốc đã tới hạn theo thứ tự thời gian (hành động xong, mafia đổi pha, hết bảng điểm). Xét ai bị bắn dùng thời điểm đã lưu (`st_at`, `st_end` so với lúc mafia nhìn lên), không phụ thuộc lúc tick tới.
-- Pha `warning` bắt đầu lúc server xử lý và gửi đi ngay, kéo dài `cfg.warn` = 0.6s (offline 0.4s, thêm 0.2s bù độ trễ mạng). Thời lượng `reading`, `watching`, `raising` không gửi cho client, nên không đọc trước được lúc mafia hạ báo.
+- Pha `warning` (rung báo) bắt đầu lúc server xử lý và gửi đi ngay, kéo dài `cfg.warn` = 0.6s (offline 0.4s, thêm 0.2s bù độ trễ mạng). Với xác suất `cfg.instant` = 0.3, hết `reading` server chuyển thẳng sang `watching` tại lúc `reading` hết hạn và xét bắn luôn. Thời lượng `reading`, `watching`, `raising` không gửi cho client, nên không đọc trước được lúc mafia rung báo hay nhìn lên.
 - Mỗi thay đổi ghi vào `peas.events` với `seq` tăng dần và gửi qua Realtime Broadcast (`realtime.send`, topic `peas:<mã phòng>`). `peas_tick` trả lại các sự kiện có `seq` lớn hơn client đã có, nên Realtime mất gói thì client vẫn nhận đủ, chậm hơn tối đa 250ms. Client xếp sự kiện theo `seq` và bỏ bản trùng (`ServerNet.ingest` trong `js/net.js`).
 - Hành động của chính mình hiện ngay khi bấm (không chờ server); server từ chối thì hủy trên màn hình. Server tính hành động bắt đầu lúc nhận lệnh, nên với ping 100ms, tay trên màn hình về chỗ cũ sớm hơn server khoảng 50ms.
 - Không tick quá 6s ở phòng chờ: bị xóa khỏi phòng. Đang chơi không tick quá 15s: rời trận (gục xuống, không có điểm thưởng). Host là người vào phòng sớm nhất còn kết nối; host chỉ có quyền Start và Back to lobby.
@@ -50,7 +50,7 @@ Không chặn được: script tự thả F khi thấy cảnh báo (cảnh báo 
 
 ```sh
 cd tests && npm install
-npm run db       # 48 test logic server trên PGlite (Postgres chạy trong Node), điều khiển được thời gian
+npm run db       # 49 test logic server trên PGlite (Postgres chạy trong Node), điều khiển được thời gian
 npm run online   # 4 người chơi (mỗi người một tiến trình Chrome) cùng phòng trên server giả lập (PGlite + REST + WebSocket Realtime), cần python3 serve.py
 REAL=1 npm run online   # như trên nhưng với Supabase thật trong js/config.js
 ```

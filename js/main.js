@@ -239,15 +239,20 @@ function startGame(list, match) {
     G.players[d.id] = {
       id: d.id, name: d.name, seat: d.seat, bot: d.bot,
       st: 'idle', stAt: now(), fork: 0, peas: 0, alive: true,
-      react: rand(150, 700), nextAt: null, noticeAt: null, greedy: null, want: 0,
+      skill: 0, nextAt: null, noticeAt: null, greedy: null, want: 0, stopFor: null, stopAt: 0,
       // online: acts = hàng đợi hành động của người khác, endAt/res = lúc xong và kết quả hành động hiện tại
       acts: [], endAt: 0, res: null,
     };
   }
+  // Mỗi trận chia lại skill (xem botTick): 1 bot ngẫu nhiên 0.85–1, còn lại 0.2–0.8.
+  shuffle(Object.values(G.players).filter((p) => p.bot))
+    .forEach((p, i) => { p.skill = i === 0 ? rand(0.85, 1) : rand(0.2, 0.8); });
   G.phase = 'play';
   G.ending = false;
   G.holdPoke = false;
   G.startedAt = now();
+  G.botSeen = null;
+  G.botRead = null;
   G.mafia = { phase: 'countdown', at: now(), dur: RULES.COUNTDOWN };
   G.goUntil = 0;
   world.setPlayers(list, G.selfId);
@@ -352,11 +357,16 @@ function toLobby() {
 
 function setMafia(phase, dur) { G.net.send('mafia', { phase, dur }); }
 
+// càng về cuối ván mafia đọc báo càng ngắn
+const mafiaSpeed = () => Math.max(0.5, 1 - (now() - G.startedAt) / 1000 / 150);
+
 function nextMafiaPhase() {
-  // càng về cuối ván mafia đọc báo càng ngắn
-  const speed = Math.max(0.5, 1 - (now() - G.startedAt) / 1000 / 150);
+  const speed = mafiaSpeed();
   switch (G.mafia.phase) {
-    case 'reading': return setMafia('warning', RULES.WARN);
+    case 'reading':
+      return Math.random() < RULES.INSTANT
+        ? setMafia('watching', rand(1.6, 3.2))
+        : setMafia('warning', RULES.WARN);
     case 'warning':
       return Math.random() < RULES.FAKE
         ? setMafia('reading', rand(1.2, 3) * speed)
@@ -375,7 +385,8 @@ const activeAt = (p, since) => p.st === 'poking' || p.st === 'eating' || p.ended
 function hostTick(t) {
   const m = G.mafia;
   const el = (t - m.at) / 1000;
-  if (m.phase === 'watching') {
+  // G.ending: điểm đã chốt, không bắn nữa (nếu không người thắng có thể bị bắn trong lúc chờ hiện bảng điểm)
+  if (m.phase === 'watching' && !G.ending) {
     const caught = Object.values(G.players).filter((p) => p.alive && activeAt(p, m.at));
     if (caught.length) {
       const victim = caught[(Math.random() * caught.length) | 0];
@@ -401,13 +412,33 @@ function hostTick(t) {
 
 function botSet(p, st, fork, peas = p.peas) { G.net.send('pstate', { id: p.id, st, fork, peas }); }
 
-// Bot xiên liên tục tới khi nĩa có `want` pea (ngẫu nhiên 5..FORK_MAX) rồi ăn.
-// Khi mafia hạ báo, bot chỉ nhận ra sau `react` ms (150–700ms, nhân 0.7–1.3); trước lúc đó vẫn bắt đầu
-// hành động mới như bình thường, nên bot phản ứng chậm có thể bị bắn. 10% số lần bot tham, bỏ qua cảnh báo.
+// Bot xiên liên tục tới khi nĩa có `want` pea rồi ăn. Tham số phụ thuộc p.skill (0..1, chia trong startGame).
+// Bot chỉ dùng thông tin người chơi cũng có (pha mafia, thời gian đã chơi, điểm người khác), không đọc G.mafia.dur.
+// - Pha reading dài ít nhất 2.5 × speed (sau raising) hoặc 1.2 × speed (sau cảnh báo giả). Hết reading mafia có
+//   thể nhìn lên luôn (INSTANT), nên minRead = mức đó. Đầu mỗi pha reading bot chọn stopAt = minRead + (2.4 − skill)
+//   giây và không bắt đầu hành động nào kết thúc sau stopAt. Hết stopAt bot ngồi im tới pha reading sau.
+//   Khi người khác đã ăn ≥ WIN − 12 mà bot còn kém ≥ 8 pea, bot bỏ giới hạn này.
+// - Khi mafia rung báo hoặc nhìn lên, bot nhận ra sau 520ms (skill 0) tới 90ms (skill 1), nhân 0.8–1.2.
+//   Trước lúc đó vẫn bắt đầu hành động mới (nếu chưa tới stopAt); hành động bắt đầu sau lúc rung báo kết thúc
+//   sau lúc mafia nhìn lên nên bị bắn.
+// - Tham (bỏ qua cảnh báo): 3% × (1 − skill); 35% trong tình huống bỏ giới hạn ở trên.
+// - Khoảng nghỉ giữa hai hành động 20–250ms, nhân (1 − 0.9 × skill).
+// - Ăn khi nĩa đủ `want` (6 + 4 × skill .. FORK_MAX), khi pea trên nĩa đủ thắng, hoặc (skill > 0.5, nĩa ≥ 8)
+//   khi lần ăn chắc chắn xong trước minRead.
+// Mô phỏng 3000 ván, 1 người chơi phản ứng 250ms, chỉ hành động tới minRead + 0.5s, cùng 5 bot: người thắng 20%,
+// bot 80%, trung bình 3.4 bot bị bắn mỗi ván. Người chơi liều tới minRead + 1.5s: thắng 50%.
 function botTick(t) {
   const ph = G.mafia.phase;
   const alert = ph === 'warning' || ph === 'watching';
-  for (const p of Object.values(G.players)) {
+  if (G.mafia !== G.botSeen) {
+    if (ph === 'reading') G.botRead = { at: G.mafia.at, min: (G.botSeen?.phase === 'warning' ? 1.2 : 2.5) * mafiaSpeed() };
+    G.botSeen = G.mafia;
+  }
+  const R = G.botRead;
+  // watching cũng tính: lúc mafia nhìn lên luôn (không rung báo), bot chưa nhận ra thì vẫn coi như đang reading
+  const readEl = R && (ph === 'reading' || alert) ? (t - R.at) / 1000 : null;
+  const ps = Object.values(G.players);
+  for (const p of ps) {
     if (!p.bot || !p.alive) continue;
     const el = (t - p.stAt) / 1000;
     if (p.st === 'poking') {
@@ -418,20 +449,28 @@ function botTick(t) {
       if (el >= RULES.EAT) botSet(p, 'idle', 0, p.peas + p.fork);
       continue;
     }
+    const s = p.skill;
+    const lead = Math.max(0, ...ps.filter((o) => o !== p && o.alive).map((o) => o.peas));
+    const desperate = lead >= RULES.WIN - 12 && p.peas + p.fork < lead - 8;
+    if (R && p.stopFor !== R) { p.stopFor = R; p.stopAt = desperate ? Infinity : R.min + 2.4 - s; }
     if (alert) {
-      p.greedy ??= Math.random() < 0.1;
-      p.noticeAt ??= t + p.react * rand(0.7, 1.3);
+      p.greedy ??= Math.random() < (desperate ? 0.35 : 0.03 * (1 - s));
+      p.noticeAt ??= t + (520 - 430 * s) * rand(0.8, 1.2);
     } else {
       p.greedy = null;
       p.noticeAt = null;
     }
     const blind = ph === 'reading' || p.greedy || (alert && t < p.noticeAt);
     if (!blind) { p.nextAt = null; continue; }
-    p.want ||= 5 + ((Math.random() * (RULES.FORK_MAX - 4)) | 0);
-    p.nextAt ??= t + rand(60, 350);
+    p.want ||= Math.round(rand(6 + 4 * s, RULES.FORK_MAX));
+    const eat = p.fork >= p.want || (p.fork > 0 && plateLeft(p) === 0)
+      || (p.fork > 0 && p.peas + p.fork >= RULES.WIN)
+      || (s > 0.5 && p.fork >= 8 && ph === 'reading' && readEl + RULES.EAT < R.min - 0.05);
+    if (readEl !== null && readEl + (eat ? RULES.EAT : RULES.POKE) > p.stopAt) continue;
+    p.nextAt ??= t + rand(20, 250) * (1 - 0.9 * s);
     if (t < p.nextAt) continue;
     p.nextAt = null;
-    if (p.fork >= p.want || (p.fork > 0 && plateLeft(p) === 0)) { p.want = 0; botSet(p, 'eating', p.fork); }
+    if (eat) { p.want = 0; botSet(p, 'eating', p.fork); }
     else if (plateLeft(p) > 0) botSet(p, 'poking', p.fork);
   }
 }
@@ -667,9 +706,13 @@ if (new URLSearchParams(location.search).has('autoplay')) {
 
 // ---------- vòng lặp ----------
 
+// Màn hình 120Hz (MacBook ProMotion) gọi requestAnimationFrame 120 lần/giây. Bỏ qua lần gọi tới sớm hơn
+// FRAME_MS - 4 ms sau khung trước: 120Hz còn 60 khung/giây, GPU vẽ một nửa số lần; 60Hz không đổi.
+const FRAME_MS = 1000 / 60;
 let last = now();
 function frame() {
   const t = now();
+  if (t - last < FRAME_MS - 4) { requestAnimationFrame(frame); return; }
   const dt = Math.min(0.05, (t - last) / 1000);
   last = t;
   if (G.phase === 'play') {

@@ -46,6 +46,25 @@ function materials() {
   return MAT;
 }
 
+// Một geometry cho mọi giọt máu bắn ra, không giải phóng (dùng lại ở mọi phát súng).
+let dropGeo = null;
+
+// Giải phóng bộ nhớ GPU của obj và các con: geometry, material và texture gắn trên material.
+// three.js không tự giải phóng khi gỡ object khỏi scene, nên thiếu bước này thì mỗi trận mới
+// (6 nhân vật dựng lại) và mỗi vũng máu (2 canvas texture 128×128) để lại buffer và texture trên GPU.
+// Bỏ qua material dùng chung trong MAT và dropGeo vì còn được dùng tiếp.
+function disposeTree(obj) {
+  const shared = new Set(Object.values(MAT));
+  obj.traverse((o) => {
+    if (o.geometry && o.geometry !== dropGeo) o.geometry.dispose();
+    for (const m of [o.material].flat()) {
+      if (!m || shared.has(m)) continue;
+      for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
+      m.dispose();
+    }
+  });
+}
+
 // Rest / plate / mouth: tọa độ tay phải trong hệ tọa độ thân người (body).
 const HAND_REST = v3(0.16, 0.72, 0.52); // nắm tay giơ cao ngang ngực, răng nĩa lơ lửng trên gò pea
 const HAND_PLATE = v3(0.1, 0.44, 0.7);
@@ -216,7 +235,7 @@ class Character {
     this.plate.peas.count = Math.max(0, RULES.PLATE - p.peas - p.fork);
   }
 
-  dispose(scene) { scene.remove(this.root); }
+  dispose(scene) { scene.remove(this.root); disposeTree(this.root); }
 }
 
 const TAG_LAYER = 1;
@@ -344,7 +363,7 @@ class Mafia {
   update(dt, m, t) {
     const el = (t - m.at) / 1000;
     let pk = 0, gk = 0;
-    if (m.phase === 'warning') pk = 0.42;
+    if (m.phase === 'warning') pk = 0.06; // rung báo: báo gần như giữ nguyên độ cao, chỉ rung
     else if (m.phase === 'watching') { pk = 1; gk = 1; }
 
     const shot = this.shots[0];
@@ -359,13 +378,17 @@ class Mafia {
     const aimK = shot ? smooth(clamp01((shot.t - 1.15) / 0.45)) : 0;
     const rackK = shot ? clamp01((shot.t - RACK_PULL + 0.06) / 0.06) * (1 - clamp01((shot.t - RACK_PULL - 0.1) / 0.03)) : 0;
     this.slideG.position.z = -0.07 * rackK;
-    this.pk += (pk - this.pk) * damp(dt, m.phase === 'warning' ? 9 : 7);
+    this.pk += (pk - this.pk) * damp(dt, m.phase === 'warning' ? 9 : m.phase === 'watching' ? 12 : 7);
     this.gk += (gk - this.gk) * damp(dt, 8);
 
     const paper = this.paper;
     paper.position.lerpVectors(PAPER_UP, PAPER_DOWN, this.pk);
     paper.rotation.x = 0.12 - 0.7 * this.pk;
-    paper.rotation.z = m.phase === 'warning' ? Math.sin(t * 0.05) * 0.04 : 0;
+    paper.rotation.z = m.phase === 'warning' ? Math.sin(t * 0.06) * 0.09 : 0;
+    if (m.phase === 'warning') {
+      paper.position.x += Math.sin(t * 0.083) * 0.025;
+      paper.position.y += Math.sin(t * 0.071) * 0.015;
+    }
     if (m.phase === 'reading') {
       paper.position.y += Math.sin(t * 0.0013) * 0.012;
       paper.rotation.y = Math.max(0, Math.sin(t * 0.0007)) ** 20 * 0.25; // thỉnh thoảng lật trang
@@ -517,7 +540,7 @@ class RetroPost {
 
 export class World {
   constructor(canvas) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
     this.post = new RetroPost();
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x050404);
@@ -720,7 +743,7 @@ export class World {
 
   setPlayers(list, selfId) {
     for (const c of this.chars) c.dispose(this.scene);
-    for (const f of this.fx) this.scene.remove(f.obj);
+    for (const f of this.fx) { this.scene.remove(f.obj); disposeTree(f.obj); }
     this.fx = [];
     this.chars = list.map((p) => new Character(this, p, p.id === selfId));
     for (const pl of this.plates) pl.peas.count = RULES.PLATE;
@@ -765,10 +788,10 @@ export class World {
       // đạn xuyên ra sau đầu: máu bắn lên sàn phía sau ghế theo hướng viên đạn
       const dir = target.clone().sub(this.mafia.gun.getWorldPosition(new THREE.Vector3())).setY(0).normalize();
       this.splatAt(target.clone().addScaledVector(dir, 1.3).setY(0.012), 1.1, { splash: true });
-      const geo = new THREE.SphereGeometry(0.014, 8, 6);
+      dropGeo ||= new THREE.SphereGeometry(0.014, 8, 6);
       const mat = materials().bloodWet;
       for (let i = 0; i < 40; i++) {
-        const d = mesh(geo, mat);
+        const d = mesh(dropGeo, mat);
         d.position.copy(target);
         const spread = v3((Math.random() - 0.5) * 2.4, Math.random() * 2.4, (Math.random() - 0.5) * 2.4);
         const vel = spread.addScaledVector(dir, 1.5 + Math.random() * 2);
@@ -826,7 +849,7 @@ export class World {
         if (this.fx.length < 260) this.splatAt(v3(p.x, onTable ? 0.807 : 0.013, p.z), 0.05 + Math.random() * 0.1);
         f.life = 0;
       }
-      if (f.life <= 0) { this.scene.remove(f.obj); this.fx.splice(this.fx.indexOf(f), 1); }
+      if (f.life <= 0) { this.scene.remove(f.obj); disposeTree(f.obj); this.fx.splice(this.fx.indexOf(f), 1); }
     }
 
     // đèn treo thỉnh thoảng chập chờn 0.1–0.4s
